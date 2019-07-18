@@ -10,19 +10,25 @@ pub struct RedfishRootService {
     pub version: String,
     #[serde(rename = "Managers")]
     pub mngrs: RedfishMember,
-
-} 
+}
 
 #[derive(Debug, Default, Deserialize)]
 pub struct RedfishMember {
     #[serde(rename = "@odata.id")]
     pub uri: String,
-} 
+}
 
 #[derive(Debug, Default, Deserialize)]
 pub struct RedfishCollection {
     #[serde(rename = "Members")]
     pub members: Vec<RedfishMember>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RedfishActionReset {
+    pub target: String,
+    #[serde(rename = "ResetType@Redfish.AllowableValues")]
+    pub reset_type: Vec<String>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -145,7 +151,6 @@ pub struct RedfishPowerSupply {
     pub status: RedfishStatus,
 }
 
-
 #[derive(Debug, Default, Deserialize)]
 pub struct RedfishProcessorId {
     #[serde(rename = "EffectiveFamily")]
@@ -240,4 +245,12 @@ pub struct RedfishSystem {
     pub memory: RedfishMemorySummary,
     #[serde(rename = "EthernetInterfaces")]
     pub eth_intfs: Option<RedfishMember>,
+    #[serde(rename = "Actions")]
+    pub actions: RedfishSystemActions,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RedfishSystemActions {
+    #[serde(rename = "#ComputerSystem.Reset")]
+    pub reset: Option<RedfishActionReset>,
 }
