@@ -247,10 +247,22 @@ pub struct RedfishSystem {
     pub eth_intfs: Option<RedfishMember>,
     #[serde(rename = "Actions")]
     pub actions: RedfishSystemActions,
+    #[serde(rename = "Boot")]
+    pub boot: Option<RedfishSystemBoot>,
 }
 
 #[derive(Debug, Default, Deserialize)]
 pub struct RedfishSystemActions {
     #[serde(rename = "#ComputerSystem.Reset")]
     pub reset: Option<RedfishActionReset>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RedfishSystemBoot {
+    #[serde(rename = "BootSourceOverrideEnabled")]
+    pub override_state: Option<String>,
+    #[serde(rename = "BootSourceOverrideTarget")]
+    pub override_target: Option<String>,
+    #[serde(rename = "BootSourceOverrideTarget@Redfish.AllowableValues")]
+    pub override_alltargets: Option<Vec<String>>,
 }

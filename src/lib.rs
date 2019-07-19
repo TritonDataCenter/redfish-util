@@ -16,6 +16,9 @@ use redfish::{
     RedfishProcessor, RedfishRootService, RedfishStatus, RedfishSystem,
 };
 
+use std::error::Error;
+use std::fmt;
+
 #[derive(Debug)]
 struct SimpleError(String);
 
@@ -27,8 +30,23 @@ impl fmt::Display for SimpleError {
     }
 }
 
-use std::error::Error;
-use std::fmt;
+enum HTTPReqType {
+    Get,
+    Patch,
+    Post,
+    Put,
+}
+
+impl fmt::Display for HTTPReqType {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        match self {
+            HTTPReqType::Get => write!(f, "GET"),
+            HTTPReqType::Patch => write!(f, "PATCH"),
+            HTTPReqType::Post => write!(f, "POST"),
+            HTTPReqType::Put => write!(f, "PUT"),
+        }
+    }
+}
 
 #[derive(Debug)]
 pub struct RedfishUtilCmd {
@@ -300,6 +318,34 @@ fn system_get(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn do_boot(config: &Config, boot_target: &str) -> Result<(), Box<dyn Error>> {
+    let uri = "/redfish/v1/Systems";
+    let resp = do_get_request(&config, &uri)?;
+    let coll: RedfishCollection = serde_json::from_str(&resp)?;
+
+    let system_uri = match &config.cmd.arg {
+        Some(id) => format!("{}/{}", uri, id),
+        None => coll.members[0].uri.clone(),
+    };
+    let resp = do_get_request(&config, &system_uri)?;
+    let system: RedfishSystem = serde_json::from_str(&resp)?;
+
+    match system.boot {
+        Some(_) => {
+            let data = format!(
+                "{{ \"Boot\": {{ \"BootSourceOverrideEnabled\":\"Once\", \
+                 \"BootSourceOverrideTarget\": \"{}\" }}}}",
+                boot_target
+            );
+            do_http_request(&config, HTTPReqType::Patch, &system_uri, Some(data.clone()))?;
+            Ok(())
+        }
+        None => Err(Box::new(SimpleError(
+            "Request Failed! Requested action not supported".to_string(),
+        ))),
+    }
+}
+
 fn do_power(config: &Config, reset_type: &str) -> Result<(), Box<dyn Error>> {
     let uri = "/redfish/v1/Systems";
     let resp = do_get_request(&config, &uri)?;
@@ -315,7 +361,7 @@ fn do_power(config: &Config, reset_type: &str) -> Result<(), Box<dyn Error>> {
     match system.actions.reset {
         Some(action) => {
             let data = format!("{{\"ResetType\":\"{}\"}}", reset_type);
-            do_put_request(&config, &action.target, data.clone())?;
+            do_http_request(&config, HTTPReqType::Post, &action.target, Some(data.clone()))?;
             Ok(())
         }
         None => Err(Box::new(SimpleError(
@@ -334,7 +380,9 @@ fn version_get(config: &Config) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-fn do_put_request(config: &Config, uri: &str, data: String) -> Result<String, Box<dyn Error>> {
+fn do_http_request(config: &Config, req_type: HTTPReqType, uri: &str, mut data: Option<String>)
+    -> Result<String, Box<dyn Error>> {
+
     let req_url = format!("https://{}{}", config.host, uri);
 
     let client = reqwest::Client::builder()
@@ -342,15 +390,37 @@ fn do_put_request(config: &Config, uri: &str, data: String) -> Result<String, Bo
         .build()?;
 
     if config.debug {
-        eprintln!("Sending POST Request: {}", req_url);
-        eprintln!("Body:\n{}", data);
+        eprintln!("Sending {} Request: {}", req_type.to_string(), req_url);
+        if data.is_some() {
+            eprintln!("Body:\n{}", data.as_mut().unwrap());
+        }
     }
 
-    let mut response = client
-        .post(&req_url)
-        .basic_auth(&config.user, Some(&config.passwd))
-        .body(data)
-        .send()?;
+    let mut response = match req_type {
+        HTTPReqType::Get => {
+            client.get(&req_url)
+                .basic_auth(&config.user, Some(&config.passwd))
+                .send()?
+        },
+        HTTPReqType::Patch => {
+            client.patch(&req_url)
+                .basic_auth(&config.user, Some(&config.passwd))
+                .body(data.unwrap())
+                .send()?
+        },
+        HTTPReqType::Post => {
+            client.post(&req_url)
+                .basic_auth(&config.user, Some(&config.passwd))
+                .body(data.unwrap())
+                .send()?
+        },
+        HTTPReqType::Put => {
+            client.put(&req_url)
+                .basic_auth(&config.user, Some(&config.passwd))
+                .body(data.unwrap())
+                .send()?
+        },
+    };
 
     if response.status().is_success() {
         let resp_txt = response.text().unwrap();
@@ -367,33 +437,7 @@ fn do_put_request(config: &Config, uri: &str, data: String) -> Result<String, Bo
 }
 
 fn do_get_request(config: &Config, uri: &str) -> Result<String, Box<dyn Error>> {
-    let req_url = format!("https://{}{}", config.host, uri);
-
-    let client = reqwest::Client::builder()
-        .danger_accept_invalid_certs(config.insecure)
-        .build()?;
-
-    if config.debug {
-        eprintln!("Sending GET Request: {}", req_url);
-    }
-    let mut response = client
-        .get(&req_url)
-        .basic_auth(&config.user, Some(&config.passwd))
-        .send()
-        .expect("Failed to send request");
-
-    if response.status().is_success() {
-        let resp_txt = response.text().unwrap();
-        if config.debug {
-            eprintln!("Response:\n{}\n", &resp_txt);
-        }
-        Ok(resp_txt)
-    } else {
-        Err(Box::new(SimpleError(format!(
-            "Request Failed! - Status Code: {}",
-            response.status()
-        ))))
-    }
+    do_http_request(&config, HTTPReqType::Get, &uri, None)
 }
 
 pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
@@ -407,6 +451,8 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
         "forceoff" => do_power(&config, "ForceOff")?,
         "forceon" => do_power(&config, "ForceOn")?,
         "forcereset" => do_power(&config, "ForceRestart")?,
+
+        "biossetup" => do_boot(&config, "BiosSetup")?,
 
         "system" => system_get(&config)?,
         "version" => version_get(&config)?,

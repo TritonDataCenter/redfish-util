@@ -33,6 +33,7 @@ where CMD can be:
 	forceoff	Force turn system off
 	forceon		Force turn system on
 	forcereset	Force reset system
+	biossetup	Set next boot to go to BIOS setup mode
 
 optional: where ARG can be the Redfish System ID
 defaults to the first system
