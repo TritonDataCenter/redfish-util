@@ -53,8 +53,10 @@ pub struct RedfishChassis {
     pub part_num: String,
     #[serde(rename = "Power")]
     pub power: RedfishMember,
+    #[serde(rename = "Thermal")]
+    pub thermal: RedfishMember,
     #[serde(rename = "Status")]
-    pub status: RedfishStatus,
+    pub status: Option<RedfishStatus>,
 }
 
 #[derive(Debug, Default, Deserialize)]
@@ -85,6 +87,16 @@ pub struct RedfishEthernetIntf {
     pub fqdn: Option<String>,
     #[serde(rename = "HostName")]
     pub hostname: Option<String>,
+    #[serde(rename = "Status")]
+    pub status: RedfishStatus,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RedfishFan {
+    #[serde(skip)]
+    pub uri: String,
+    #[serde(rename = "FanName")]
+    pub name: String,
     #[serde(rename = "Status")]
     pub status: RedfishStatus,
 }
@@ -265,4 +277,12 @@ pub struct RedfishSystemBoot {
     pub override_target: Option<String>,
     #[serde(rename = "BootSourceOverrideTarget@Redfish.AllowableValues")]
     pub override_alltargets: Option<Vec<String>>,
+}
+
+#[derive(Debug, Default, Deserialize)]
+pub struct RedfishThermal {
+    #[serde(skip)]
+    pub uri: String,
+    #[serde(rename = "Fans")]
+    pub fans: Vec<RedfishFan>,
 }

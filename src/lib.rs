@@ -13,7 +13,7 @@ extern crate serde;
 mod redfish;
 use redfish::{
     RedfishChassis, RedfishCollection, RedfishEthernetIntf, RedfishManager, RedfishPower,
-    RedfishProcessor, RedfishRootService, RedfishStatus, RedfishSystem,
+    RedfishProcessor, RedfishRootService, RedfishStatus, RedfishSystem, RedfishThermal
 };
 
 use std::error::Error;
@@ -119,7 +119,70 @@ fn print_status(status: &RedfishStatus, pad: usize) {
     }
 }
 
-fn chassis_get(config: &Config) -> Result<(), Box<dyn Error>> {
+fn ethernet_get(config: &Config, uri: &str) 
+    -> Result<Vec<RedfishEthernetIntf>, Box<dyn Error>> {
+
+    let resp = do_get_request(&config, uri)?;
+    let coll: RedfishCollection = serde_json::from_str(&resp)?;
+    let mut intfs = Vec::new();
+
+    for mmbr in &coll.members {
+        let resp = do_get_request(&config, &mmbr.uri)?;
+        let mut eth: RedfishEthernetIntf = serde_json::from_str(&resp)?;
+        eth.uri = mmbr.uri.clone();
+        intfs.push(eth);
+    }
+    Ok(intfs)
+}
+
+fn managers_get(config: &Config) -> Result<Vec<RedfishManager>, Box<dyn Error>> {
+    let uri = "/redfish/v1";
+    let resp = do_get_request(&config, &uri)?;
+    let rootsvc: RedfishRootService = serde_json::from_str(&resp)?;
+    let resp = do_get_request(&config, &rootsvc.mngrs.uri)?;
+    let coll: RedfishCollection = serde_json::from_str(&resp)?;
+    let mut mngrs = Vec::new();
+
+    for mmbr in &coll.members {
+        let resp = do_get_request(&config, &mmbr.uri)?;
+        let mut mngr: RedfishManager = serde_json::from_str(&resp)?;
+        mngr.uri = mmbr.uri.clone();
+        mngrs.push(mngr);
+    }
+    Ok(mngrs)
+}
+
+fn power_get(config: &Config, uri: &str) -> Result<RedfishPower, Box<dyn Error>> {
+    let resp = do_get_request(&config, uri)?;
+    let power: RedfishPower = serde_json::from_str(&resp)?;
+
+    Ok(power)
+}
+
+fn processors_get(config: &Config, uri: &str)
+    -> Result<Vec<RedfishProcessor>, Box<dyn Error>> {
+
+    let resp = do_get_request(&config, uri)?;
+    let coll: RedfishCollection = serde_json::from_str(&resp)?;
+    let mut chips = Vec::new();
+
+    for mmbr in &coll.members {
+        let resp = do_get_request(&config, &mmbr.uri)?;
+        let mut chip: RedfishProcessor = serde_json::from_str(&resp)?;
+        chip.uri = mmbr.uri.clone();
+        chips.push(chip);
+    }
+    Ok(chips)
+}
+
+fn thermal_get(config: &Config, uri: &str) -> Result<RedfishThermal, Box<dyn Error>> {
+    let resp = do_get_request(&config, uri)?;
+    let thermal: RedfishThermal = serde_json::from_str(&resp)?;
+
+    Ok(thermal)
+}
+
+fn show_chassis(config: &Config) -> Result<(), Box<dyn Error>> {
     let uri = "/redfish/v1/Chassis";
     let resp = do_get_request(&config, &uri)?;
     let coll: RedfishCollection = serde_json::from_str(&resp)?;
@@ -134,31 +197,51 @@ fn chassis_get(config: &Config) -> Result<(), Box<dyn Error>> {
         println!("  {0: <20} {1}", "Manufacturer:", chassis.manufacturer);
         println!("  {0: <20} {1}", "Serial Number:", chassis.serial_num);
         println!("  {0: <20} {1}", "Part Number:", chassis.part_num);
-        print_status(&chassis.status, 2);
-        power_get(&config, &chassis.power.uri)?;
+        if chassis.status.is_some() {
+            print_status(&chassis.status.unwrap(), 2);
+        }
+
+        let mut power = power_get(&config, &chassis.power.uri)?;
+        println!("\n  Power Supplies");
+        for psu in &mut power.power_supplies {
+            println!("    {0: <20} {1}", "Label:", psu.name);
+            if psu.model.is_some() {
+                println!("    {0: <20} {1}", "Model:", psu.model.as_mut().unwrap());
+            }
+            if psu.serial.is_some() {
+                println!("    {0: <20} {1}", "Serial:", psu.serial.as_mut().unwrap());
+            }
+            print_status(&psu.status, 4);
+            println!();
+        }
+
+        let mut thermal = thermal_get(&config, &chassis.thermal.uri)?;
+        println!("  Fans");
+        for fan in &mut thermal.fans {
+            println!("    {0: <20} {1}", "Label:", fan.name);
+            print_status(&fan.status, 4);
+            println!();
+        }
     }
     Ok(())
 }
 
-fn ethernet_get(config: &Config, uri: &str) -> Result<(), Box<dyn Error>> {
-    let resp = do_get_request(&config, uri)?;
-    let coll: RedfishCollection = serde_json::from_str(&resp)?;
-
+fn print_ethernet_intfs(eths: &mut [RedfishEthernetIntf])
+{
     println!("\n  Ethernet Interfaces");
-    for mmbr in &coll.members {
-        let resp = do_get_request(&config, &mmbr.uri)?;
-        let mut eth: RedfishEthernetIntf = serde_json::from_str(&resp)?;
-        eth.uri = mmbr.uri.clone();
+    for eth in eths {
         println!("    {0: <20} {1}", "Label:", eth.name);
         if eth.mac_addr.is_some() {
-            println!("    {0: <20} {1}", "MAC Address:", eth.mac_addr.unwrap());
+            println!("    {0: <20} {1}", "MAC Address:",
+                eth.mac_addr.as_mut().unwrap());
         }
         if eth.link_state.is_some() {
-            println!("    {0: <20} {1}", "Link State:", eth.link_state.unwrap());
+            println!("    {0: <20} {1}", "Link State:",
+                eth.link_state.as_mut().unwrap());
         }
         if eth.ipv4.is_some() {
-            let ipv4addrs = eth.ipv4.unwrap();
-            for ipv4 in &ipv4addrs {
+            let ipv4addrs = eth.ipv4.as_mut().unwrap();
+            for ipv4 in ipv4addrs {
                 println!("    {0: <20} {1}", "IPv4 Address:", ipv4.address);
                 println!("    {0: <20} {1}", "IPv4 Subnet:", ipv4.subnet);
                 println!("    {0: <20} {1}", "IPv4 Gateway:", ipv4.gateway);
@@ -169,112 +252,43 @@ fn ethernet_get(config: &Config, uri: &str) -> Result<(), Box<dyn Error>> {
         print_status(&eth.status, 6);
         println!();
     }
-    Ok(())
 }
 
-fn managers_get(config: &Config) -> Result<(), Box<dyn Error>> {
-    let uri = "/redfish/v1";
-    let resp = do_get_request(&config, &uri)?;
-    let rootsvc: RedfishRootService = serde_json::from_str(&resp)?;
-    let resp = do_get_request(&config, &rootsvc.mngrs.uri)?;
-    let coll: RedfishCollection = serde_json::from_str(&resp)?;
+fn show_system(config: &Config) -> Result<(), Box<dyn Error>> {
+    println!("Managers");
+    let mut mngrs = managers_get(&config)?;
 
-    for mmbr in &coll.members {
-        let resp = do_get_request(&config, &mmbr.uri)?;
-        let mut mngr: RedfishManager = serde_json::from_str(&resp)?;
-        mngr.uri = mmbr.uri.clone();
+    for mngr in &mut mngrs {
         println!("  {0: <20} {1}", "Type:", mngr.mngr_type);
         if mngr.model.is_some() {
-            println!("  {0: <20} {1}", "Model:", mngr.model.unwrap());
+            println!("  {0: <20} {1}", "Model:", mngr.model.as_mut().unwrap());
         }
         if mngr.fw_version.is_some() {
             println!(
                 "  {0: <20} {1}",
                 "Firmware Version:",
-                mngr.fw_version.unwrap()
+                mngr.fw_version.as_mut().unwrap()
             );
         }
         let mut supp_cons = String::new();
-        if mngr.cons_graph.is_some() && mngr.cons_graph.unwrap().enabled {
+        if mngr.cons_graph.is_some() && mngr.cons_graph.as_mut().unwrap().enabled {
             supp_cons.push_str("KVM ");
         }
-        if mngr.cons_serial.is_some() && mngr.cons_serial.unwrap().enabled {
+        if mngr.cons_serial.is_some() && mngr.cons_serial.as_mut().unwrap().enabled {
             supp_cons.push_str("Serial ");
         }
-        if mngr.cons_shell.is_some() && mngr.cons_shell.unwrap().enabled {
+        if mngr.cons_shell.is_some() && mngr.cons_shell.as_mut().unwrap().enabled {
             supp_cons.push_str("CLI");
         }
         println!("  {0: <20} {1}", "Console Types:", supp_cons);
         println!("  Status");
         print_status(&mngr.status, 4);
         if mngr.eth_intfs.is_some() {
-            ethernet_get(&config, &mngr.eth_intfs.unwrap().uri)?;
+            let mut eths = ethernet_get(&config, &mngr.eth_intfs.as_mut().unwrap().uri)?;
+            print_ethernet_intfs(eths.as_mut_slice());
         }
         println!();
     }
-    Ok(())
-}
-
-fn power_get(config: &Config, uri: &str) -> Result<(), Box<dyn Error>> {
-    let resp = do_get_request(&config, uri)?;
-    let mut power: RedfishPower = serde_json::from_str(&resp)?;
-
-    println!("\n  Power Supplies");
-    for psu in &mut power.power_supplies {
-        println!("    {0: <20} {1}", "Label:", psu.name);
-        if psu.model.is_some() {
-            println!("    {0: <20} {1}", "Model:", psu.model.as_mut().unwrap());
-        }
-        if psu.serial.is_some() {
-            println!("    {0: <20} {1}", "Serial:", psu.serial.as_mut().unwrap());
-        }
-        print_status(&psu.status, 4);
-        println!();
-    }
-    Ok(())
-}
-
-fn processors_get(config: &Config, uri: &str) -> Result<(), Box<dyn Error>> {
-    let resp = do_get_request(&config, uri)?;
-    let coll: RedfishCollection = serde_json::from_str(&resp)?;
-
-    println!("\n  Processors");
-    for mmbr in &coll.members {
-        let resp = do_get_request(&config, &mmbr.uri)?;
-        let mut chip: RedfishProcessor = serde_json::from_str(&resp)?;
-        chip.uri = mmbr.uri.clone();
-        println!();
-        println!("    {0: <20} {1}", "Label:", chip.socket);
-        println!("    {0: <20} {1}", "Manufacturer:", chip.manufacturer);
-        println!("    {0: <20} {1}", "Brand:", chip.brand);
-        if chip.id.family.is_some() {
-            println!("    {0: <20} {1}", "Family:", chip.id.family.unwrap());
-        }
-        if chip.id.model.is_some() {
-            println!("    {0: <20} {1}", "Model:", chip.id.model.unwrap());
-        }
-        if chip.id.stepping.is_some() {
-            println!("    {0: <20} {1}", "Stepping:", chip.id.stepping.unwrap());
-        }
-        if chip.id.ucode_version.is_some() {
-            println!(
-                "    {0: <20} {1}",
-                "Ucode Version:",
-                chip.id.ucode_version.unwrap()
-            );
-        }
-        println!("    {0: <20} {1} MHz", "Speed:", chip.speed_mhz);
-        println!("    {0: <20} {1}", "Total Cores:", chip.ncores);
-        println!("    {0: <20} {1}", "Total Threads:", chip.nthreads);
-        println!("    Status");
-        print_status(&chip.status, 6);
-    }
-    Ok(())
-}
-
-fn system_get(config: &Config) -> Result<(), Box<dyn Error>> {
-    println!("Managers");
-    managers_get(&config)?;
 
     let uri = "/redfish/v1/Systems";
     let resp = do_get_request(&config, &uri)?;
@@ -305,16 +319,58 @@ fn system_get(config: &Config) -> Result<(), Box<dyn Error>> {
         }
         println!("  Status");
         print_status(&system.memory.status, 4);
-        processors_get(&config, &system.chips.uri)?;
+
+        let mut chips = processors_get(&config, &system.chips.uri)?;
+        println!("\n  Processors");
+        for chip in &mut chips {
+            println!();
+            println!("    {0: <20} {1}", "Label:", chip.socket);
+            println!("    {0: <20} {1}", "Manufacturer:", chip.manufacturer);
+            println!("    {0: <20} {1}", "Brand:", chip.brand);
+            if chip.id.family.is_some() {
+                println!("    {0: <20} {1}", "Family:", chip.id.family.as_mut().unwrap());
+            }
+            if chip.id.model.is_some() {
+                println!("    {0: <20} {1}", "Model:", chip.id.model.as_mut().unwrap());
+            }
+            if chip.id.stepping.is_some() {
+                println!("    {0: <20} {1}", "Stepping:", chip.id.stepping.as_mut().unwrap());
+            }
+            if chip.id.ucode_version.is_some() {
+                println!(
+                    "    {0: <20} {1}",
+                    "Ucode Version:",
+                    chip.id.ucode_version.as_mut().unwrap()
+                );
+            }
+            println!("    {0: <20} {1} MHz", "Speed:", chip.speed_mhz);
+            println!("    {0: <20} {1}", "Total Cores:", chip.ncores);
+            println!("    {0: <20} {1}", "Total Threads:", chip.nthreads);
+            println!("    Status");
+            print_status(&chip.status, 6);
+        }
+
         println!("\n  Memory");
         println!(
             "    {0: <20} {1} GiB",
             "Total RAM:", system.memory.total_memory
         );
+
         if system.eth_intfs.is_some() {
-            ethernet_get(&config, &system.eth_intfs.unwrap().uri)?;
+            let mut eths = ethernet_get(&config, &system.eth_intfs.unwrap().uri)?;
+            print_ethernet_intfs(eths.as_mut_slice());
         }
     }
+    Ok(())
+}
+
+fn show_version(config: &Config) -> Result<(), Box<dyn Error>> {
+    let uri = "/redfish/v1";
+    let resp = do_get_request(&config, &uri)?;
+    let rootsvc: RedfishRootService = serde_json::from_str(&resp)?;
+
+    println!("Redfish version: {}", rootsvc.version);
+
     Ok(())
 }
 
@@ -368,16 +424,6 @@ fn do_power(config: &Config, reset_type: &str) -> Result<(), Box<dyn Error>> {
             "Request Failed! Requested action not supported".to_string(),
         ))),
     }
-}
-
-fn version_get(config: &Config) -> Result<(), Box<dyn Error>> {
-    let uri = "/redfish/v1";
-    let resp = do_get_request(&config, &uri)?;
-    let rootsvc: RedfishRootService = serde_json::from_str(&resp)?;
-
-    println!("Redfish version: {}", rootsvc.version);
-
-    Ok(())
 }
 
 fn do_http_request(config: &Config, req_type: HTTPReqType, uri: &str, mut data: Option<String>)
@@ -442,7 +488,6 @@ fn do_get_request(config: &Config, uri: &str) -> Result<String, Box<dyn Error>> 
 
 pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
     match config.cmd.cmd.as_ref() {
-        "chassis" => chassis_get(&config)?,
 
         "nmi" => do_power(&config, "Nmi")?,
         "off" => do_power(&config, "GracefulShutdown")?,
@@ -451,11 +496,11 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
         "forceoff" => do_power(&config, "ForceOff")?,
         "forceon" => do_power(&config, "ForceOn")?,
         "forcereset" => do_power(&config, "ForceRestart")?,
-
         "biossetup" => do_boot(&config, "BiosSetup")?,
 
-        "system" => system_get(&config)?,
-        "version" => version_get(&config)?,
+        "chassis" => show_chassis(&config)?,
+        "system" => show_system(&config)?,
+        "version" => show_version(&config)?,
 
         _ => {
             panic!("unexpected command");
