@@ -96,7 +96,9 @@ pub struct RedfishFan {
     #[serde(skip)]
     pub uri: String,
     #[serde(rename = "FanName")]
-    pub name: String,
+    pub fanname: Option<String>,
+    #[serde(rename = "Name")]
+    pub name: Option<String>,
     #[serde(rename = "Status")]
     pub status: RedfishStatus,
 }

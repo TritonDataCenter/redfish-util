@@ -218,7 +218,15 @@ fn show_chassis(config: &Config) -> Result<(), Box<dyn Error>> {
         let mut thermal = thermal_get(&config, &chassis.thermal.uri)?;
         println!("  Fans");
         for fan in &mut thermal.fans {
-            println!("    {0: <20} {1}", "Label:", fan.name);
+            //
+            // "FanName" was deprecated in favor of "Name".  We need need to
+            // handle both cases.
+            //
+            if fan.name.is_some() {
+                println!("    {0: <20} {1}", "Label:", fan.name.as_mut().unwrap());
+            } else if fan.fanname.is_some() {
+                println!("    {0: <20} {1}", "Label:", fan.fanname.as_mut().unwrap());
+            }
             print_status(&fan.status, 4);
             println!();
         }
