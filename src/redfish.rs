@@ -43,18 +43,20 @@ pub struct RedfishConsole {
 pub struct RedfishChassis {
     #[serde(skip)]
     pub uri: String,
+    #[serde(rename = "Name")]
+    pub name: String,
     #[serde(rename = "ChassisType")]
     pub chassis_type: String,
     #[serde(rename = "Manufacturer")]
-    pub manufacturer: String,
+    pub manufacturer: Option<String>,
     #[serde(rename = "SerialNumber")]
     pub serial_num: String,
     #[serde(rename = "PartNumber")]
     pub part_num: String,
     #[serde(rename = "Power")]
-    pub power: RedfishMember,
+    pub power: Option<RedfishMember>,
     #[serde(rename = "Thermal")]
-    pub thermal: RedfishMember,
+    pub thermal: Option<RedfishMember>,
     #[serde(rename = "Status")]
     pub status: Option<RedfishStatus>,
 }

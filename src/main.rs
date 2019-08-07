@@ -60,6 +60,8 @@ fn usage(progname: &str, opts: &Options) {
     println!("\tforceon\t\tForce turn system on");
     println!("\tforcereset\tForce reset system");
     println!("\tbiossetup\tSet next boot to go to BIOS setup mode");
+    println!("\tidentifyoff\tTurn Identify LED off");
+    println!("\tidentifyon\tTurn Identify LED on");
     println!("\noptional: where ARG can be the Redfish System ID");
     println!("defaults to the first system");
 }

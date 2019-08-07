@@ -40,6 +40,8 @@ where CMD can be:
 	forceon		Force turn system on
 	forcereset	Force reset system
 	biossetup	Set next boot to go to BIOS setup mode
+	identifyoff	Turn Identify LED off
+	identifyon	Turn Identify LED on
 
 optional: where ARG can be the Redfish System ID
 defaults to the first system

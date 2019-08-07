@@ -193,42 +193,48 @@ fn show_chassis(config: &Config) -> Result<(), Box<dyn Error>> {
         let mut chassis: RedfishChassis = serde_json::from_str(&resp)?;
         chassis.uri = mmbr.uri.to_string();
         println!("Chassis Details");
+        println!("  {0: <20} {1}", "Name:", chassis.name);
         println!("  {0: <20} {1}", "Type:", chassis.chassis_type);
-        println!("  {0: <20} {1}", "Manufacturer:", chassis.manufacturer);
+	if chassis.manufacturer.is_some() {
+            println!("  {0: <20} {1}", "Manufacturer:", chassis.manufacturer.as_mut().unwrap());
+        }
         println!("  {0: <20} {1}", "Serial Number:", chassis.serial_num);
         println!("  {0: <20} {1}", "Part Number:", chassis.part_num);
         if chassis.status.is_some() {
             print_status(&chassis.status.unwrap(), 2);
         }
 
-        let mut power = power_get(&config, &chassis.power.uri)?;
-        println!("\n  Power Supplies");
-        for psu in &mut power.power_supplies {
-            println!("    {0: <20} {1}", "Label:", psu.name);
-            if psu.model.is_some() {
-                println!("    {0: <20} {1}", "Model:", psu.model.as_mut().unwrap());
+        if chassis.power.is_some() {
+            let mut power = power_get(&config, &chassis.power.as_mut().unwrap().uri)?;
+            println!("\n  Power Supplies");
+            for psu in &mut power.power_supplies {
+                println!("    {0: <20} {1}", "Label:", psu.name);
+                if psu.model.is_some() {
+                    println!("    {0: <20} {1}", "Model:", psu.model.as_mut().unwrap());
+                }
+                if psu.serial.is_some() {
+                    println!("    {0: <20} {1}", "Serial:", psu.serial.as_mut().unwrap());
+                }
+                print_status(&psu.status, 4);
+                println!();
             }
-            if psu.serial.is_some() {
-                println!("    {0: <20} {1}", "Serial:", psu.serial.as_mut().unwrap());
-            }
-            print_status(&psu.status, 4);
-            println!();
         }
-
-        let mut thermal = thermal_get(&config, &chassis.thermal.uri)?;
-        println!("  Fans");
-        for fan in &mut thermal.fans {
-            //
-            // "FanName" was deprecated in favor of "Name".  We need need to
-            // handle both cases.
-            //
-            if fan.name.is_some() {
-                println!("    {0: <20} {1}", "Label:", fan.name.as_mut().unwrap());
-            } else if fan.fanname.is_some() {
-                println!("    {0: <20} {1}", "Label:", fan.fanname.as_mut().unwrap());
+        if chassis.thermal.is_some() {
+            let mut thermal = thermal_get(&config, &chassis.thermal.as_mut().unwrap().uri)?;
+            println!("  Fans");
+            for fan in &mut thermal.fans {
+                //
+                // "FanName" was deprecated in favor of "Name".  We need need to
+                // handle both cases.
+                //
+                if fan.name.is_some() {
+                    println!("    {0: <20} {1}", "Label:", fan.name.as_mut().unwrap());
+                } else if fan.fanname.is_some() {
+                    println!("    {0: <20} {1}", "Label:", fan.fanname.as_mut().unwrap());
+                }
+                print_status(&fan.status, 4);
+                println!();
             }
-            print_status(&fan.status, 4);
-            println!();
         }
     }
     Ok(())
@@ -410,7 +416,31 @@ fn do_boot(config: &Config, boot_target: &str) -> Result<(), Box<dyn Error>> {
     }
 }
 
-fn do_power(config: &Config, reset_type: &str) -> Result<(), Box<dyn Error>> {
+fn do_identify(config: &Config, ledstate: &str) -> Result<(), Box<dyn Error>> {
+    let uri = "/redfish/v1/Systems";
+    let resp = do_get_request(&config, &uri)?;
+    let coll: RedfishCollection = serde_json::from_str(&resp)?;
+
+    let system_uri = match &config.cmd.arg {
+        Some(id) => format!("{}/{}", uri, id),
+        None => coll.members[0].uri.clone(),
+    };
+    let resp = do_get_request(&config, &system_uri)?;
+    let system: RedfishSystem = serde_json::from_str(&resp)?;
+
+    match system.locate_led {
+        Some(_) => {
+            let data = format!("{{\"IndicatorLED\":\"{}\"}}", ledstate);
+            do_http_request(&config, HTTPReqType::Patch, &system_uri, Some(data.clone()))?;
+            Ok(())
+        }
+        None => Err(Box::new(SimpleError(
+            "Request Failed! Requested action not supported".to_string(),
+        ))),
+    }
+}
+
+fn do_power(config: &Config, pwrstate: &str) -> Result<(), Box<dyn Error>> {
     let uri = "/redfish/v1/Systems";
     let resp = do_get_request(&config, &uri)?;
     let coll: RedfishCollection = serde_json::from_str(&resp)?;
@@ -424,7 +454,7 @@ fn do_power(config: &Config, reset_type: &str) -> Result<(), Box<dyn Error>> {
 
     match system.actions.reset {
         Some(action) => {
-            let data = format!("{{\"ResetType\":\"{}\"}}", reset_type);
+            let data = format!("{{\"ResetType\":\"{}\"}}", pwrstate);
             do_http_request(&config, HTTPReqType::Post, &action.target, Some(data.clone()))?;
             Ok(())
         }
@@ -505,6 +535,8 @@ pub fn run(config: &Config) -> Result<(), Box<dyn Error>> {
         "forceon" => do_power(&config, "ForceOn")?,
         "forcereset" => do_power(&config, "ForceRestart")?,
         "biossetup" => do_boot(&config, "BiosSetup")?,
+        "identifyoff" => do_identify(&config, "Off")?,
+        "identifyon" => do_identify(&config, "Blinking")?,
 
         "chassis" => show_chassis(&config)?,
         "system" => show_system(&config)?,
