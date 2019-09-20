@@ -18,6 +18,7 @@ use std::error::Error;
 use std::fs;
 use std::process;
 
+pub const VERSION: &'static str = "20190919";
 
 #[derive(Debug, Default, Deserialize)]
 pub struct ConfigFileEntry {
@@ -38,8 +39,10 @@ fn usage(progname: &str, opts: &Options) {
     let msg = format!("Usage\n \
         {} -H HOST -u USERID -p PASSWD -c CMD:[ARG] [-d] [-i] \
         \nor\n \
-        {} -e ENTRY -c CMD:[ARG] [-d] [-i]",
-        progname, progname
+        {} -e ENTRY -c CMD:[ARG] [-d] [-i] \
+        \nor\n \
+        {} -v",
+        progname, progname, progname
     );
     print!("{}", opts.usage(&msg));
     println!("\nTo use a config file, specify the path in REDFISH_UTIL_CONF");
@@ -86,6 +89,7 @@ fn main()  -> Result<(), Box<dyn Error>> {
     opts.optflag("d", "debug", "Enable debug messages");
     opts.optflag("i", "insecure", "Toggle insecure mode on");
     opts.optflag("h", "help", "Display this usage message");
+    opts.optflag("v", "version", "Display program version and exit");
 
 
     let matches = match opts.parse(&args[1..]) {
@@ -96,6 +100,11 @@ fn main()  -> Result<(), Box<dyn Error>> {
     if matches.opt_present("h") {
         usage(&progname, &opts);
         process::exit(2);
+    }
+
+    if matches.opt_present("v") {
+        println!("{}", VERSION);
+        process::exit(0);
     }
 
     let debug = matches.opt_present("d");

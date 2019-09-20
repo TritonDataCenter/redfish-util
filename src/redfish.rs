@@ -28,7 +28,7 @@ pub struct RedfishCollection {
 pub struct RedfishActionReset {
     pub target: String,
     #[serde(rename = "ResetType@Redfish.AllowableValues")]
-    pub reset_type: Vec<String>,
+    pub reset_type: Option<Vec<String>>,
 }
 
 #[derive(Debug, Default, Deserialize)]
